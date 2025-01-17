@@ -24,65 +24,55 @@ class GameGeneratorController extends Controller
         return view('game-generator');
     }
 
-    // Handle game generation
-    public function generateGame(Request $request)
+    // Handle game generation phase
+    public function generateGamePhase(Request $request)
     {
         $request->validate([
             'game_type' => 'required|string',
             'theme' => 'required|string',
             'complexity' => 'required|string|in:simple,medium,complex',
-            'iteration' => 'sometimes|integer|min:1'
+            'phase' => 'sometimes|integer|min:1|max:5',
+            'feedback' => 'sometimes|string'
         ]);
 
         try {
-            // Generate unique game ID
             $gameId = $request->game_id ?? Str::uuid();
-            $iteration = $request->iteration ?? 1;
+            $phase = $request->phase ?? 1;
             
-            Log::debug('Generating game', [
+            Log::debug('Generating game phase', [
                 'game_id' => $gameId,
-                'iteration' => $iteration,
+                'phase' => $phase,
                 'theme' => $request->theme
             ]);
 
-            // Generate game files using AI
-            $gameFiles = $this->gameService->generateGameCode(
+            // Generate phase content
+            $phaseContent = $this->gameService->generateGamePhase(
                 $request->game_type,
                 $request->theme,
                 $request->complexity,
-                $iteration
+                $request->feedback
             );
 
-            // Store game files
-            Storage::disk('public')->put(
-                "games/{$gameId}/index.html",
-                $gameFiles['html']
-            );
-            Storage::disk('public')->put(
-                "games/{$gameId}/style.css",
-                $gameFiles['css']
-            );
-            Storage::disk('public')->put(
-                "games/{$gameId}/script.js",
-                $gameFiles['js']
-            );
+            // Store phase files
+            $this->storePhaseFiles($gameId, $phase, $phaseContent);
 
-            Log::debug('Game files stored', [
+            Log::debug('Game phase stored', [
                 'game_id' => $gameId,
-                'iteration' => $gameFiles['iteration']
+                'phase' => $phase
             ]);
 
             return redirect()->route('game.show', ['id' => $gameId])
-                ->with('success', 'Game generated successfully!')
-                ->with('iteration', $gameFiles['iteration']);
+                ->with('success', 'Game phase generated successfully!')
+                ->with('phase', $phase)
+                ->with('next_prompt', $phaseContent['next_prompt']);
 
         } catch (Exception $e) {
-            Log::error('Game generation failed', [
+            Log::error('Game phase generation failed', [
                 'error' => $e->getMessage(),
                 'stack' => $e->getTraceAsString()
             ]);
             return back()->withInput()
-                ->withErrors(['error' => 'Game generation failed: ' . $e->getMessage()]);
+                ->withErrors(['error' => 'Game phase generation failed: ' . $e->getMessage()]);
         }
     }
 
@@ -95,37 +85,80 @@ class GameGeneratorController extends Controller
             abort(404);
         }
 
-        $iteration = session('iteration', 1);
+        $phase = session('phase', 1);
+        $nextPrompt = session('next_prompt');
+        
         Log::debug('Showing game', [
             'game_id' => $id,
-            'iteration' => $iteration
+            'phase' => $phase
         ]);
 
         return view('game-display', [
             'gameUrl' => asset("storage/{$gamePath}/index.html"),
             'gameId' => $id,
-            'iteration' => $iteration
+            'phase' => $phase,
+            'nextPrompt' => $nextPrompt
         ]);
     }
 
-    // Handle game feedback and regeneration
-    public function updateGame(Request $request, $id)
+    // Handle game feedback and next phase
+    public function updateGamePhase(Request $request, $id)
     {
         $request->validate([
             'feedback' => 'required|string',
-            'iteration' => 'required|integer|min:1'
+            'phase' => 'required|integer|min:1|max:5'
         ]);
 
-        Log::debug('Updating game', [
+        Log::debug('Updating game phase', [
             'game_id' => $id,
-            'iteration' => $request->iteration,
-            'new_iteration' => $request->iteration + 1
+            'phase' => $request->phase,
+            'new_phase' => $request->phase + 1
         ]);
 
-        return $this->generateGame($request->merge([
+        return $this->generateGamePhase($request->merge([
             'game_id' => $id,
             'theme' => $request->feedback,
-            'iteration' => $request->iteration + 1
+            'phase' => $request->phase + 1
         ]));
+    }
+
+    // Store phase-specific files
+    private function storePhaseFiles($gameId, $phase, $phaseContent)
+    {
+        $basePath = "games/{$gameId}/phase-{$phase}";
+        
+        // Store phase description
+        Storage::disk('public')->put(
+            "{$basePath}/description.txt",
+            $phaseContent['content']['description'] ?? ''
+        );
+        
+        // Store phase assets
+        Storage::disk('public')->put(
+            "{$basePath}/assets.json",
+            json_encode($phaseContent['content']['assets'] ?? [])
+        );
+        
+        // Store phase tasks
+        Storage::disk('public')->put(
+            "{$basePath}/tasks.json",
+            json_encode($phaseContent['content']['tasks'] ?? [])
+        );
+        
+        // If final phase, store game files
+        if ($phase === 5) {
+            Storage::disk('public')->put(
+                "games/{$gameId}/index.html",
+                $phaseContent['content']['html'] ?? ''
+            );
+            Storage::disk('public')->put(
+                "games/{$gameId}/style.css",
+                $phaseContent['content']['css'] ?? ''
+            );
+            Storage::disk('public')->put(
+                "games/{$gameId}/script.js",
+                $phaseContent['content']['js'] ?? ''
+            );
+        }
     }
 }
