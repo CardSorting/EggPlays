@@ -23,3 +23,6 @@ Route::post('/generate', [GameGeneratorController::class, 'generateGame'])->name
 
 // Game Display Route
 Route::get('/game/{id}', [GameGeneratorController::class, 'showGame'])->name('game.show');
+
+// Game Update Route
+Route::put('/game/{id}', [GameGeneratorController::class, 'updateGame'])->name('game.update');

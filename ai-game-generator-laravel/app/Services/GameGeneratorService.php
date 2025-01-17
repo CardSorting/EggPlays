@@ -4,10 +4,12 @@ namespace App\Services;
 
 use OpenAI\Client;
 use Exception;
+use Illuminate\Support\Facades\Session;
 
 class GameGeneratorService
 {
     protected $client;
+    protected $conversationKey = 'game_generation_conversation';
 
     public function __construct()
     {
@@ -17,27 +19,45 @@ class GameGeneratorService
             ->make();
     }
 
-    public function generateGameCode($type, $theme, $complexity)
+    public function generateGameCode($type, $theme, $complexity, $iteration = 1)
     {
         try {
-            $prompt = $this->createPrompt($type, $theme, $complexity);
+            // Get or initialize conversation history
+            $messages = Session::get($this->conversationKey, []);
             
-            $response = $this->client->chat()->create([
-                'model' => 'deepseek-chat',
-                'messages' => [
+            // First turn - initialize conversation
+            if ($iteration === 1) {
+                $messages = [
                     [
                         'role' => 'system',
                         'content' => 'You are a game development assistant that generates complete HTML5 games.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => $prompt
+                        'content' => $this->createPrompt($type, $theme, $complexity)
                     ]
-                ],
+                ];
+            } else {
+                // Subsequent turns - add user feedback
+                $messages[] = [
+                    'role' => 'user',
+                    'content' => "Please improve the game based on the following feedback: {$theme}"
+                ];
+            }
+
+            // Generate response
+            $response = $this->client->chat()->create([
+                'model' => 'deepseek-chat',
+                'messages' => $messages,
                 'temperature' => 0.7,
                 'max_tokens' => 2000
             ]);
 
+            // Add assistant response to conversation history
+            $messages[] = $response->choices[0]->message;
+            Session::put($this->conversationKey, $messages);
+
+            // Parse and return game files
             $content = $response->choices[0]->message->content;
             $parsed = $this->parseResponse($content);
             
@@ -54,12 +74,18 @@ class GameGeneratorService
             return [
                 'html' => $html,
                 'css' => $parsed['css'],
-                'js' => $parsed['js']
+                'js' => $parsed['js'],
+                'iteration' => $iteration
             ];
             
         } catch (Exception $e) {
             throw new Exception('AI game generation failed: ' . $e->getMessage());
         }
+    }
+
+    public function resetConversation()
+    {
+        Session::forget($this->conversationKey);
     }
 
     private function createPrompt($type, $theme, $complexity)
