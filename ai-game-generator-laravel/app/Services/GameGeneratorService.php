@@ -27,7 +27,7 @@ class GameGeneratorService
             ->make();
     }
 
-    public function generateGamePhase($type, $theme, $complexity, $feedback = null)
+    public function generateGamePhase($type, $feedback = null)
     {
         $attempt = 0;
         
@@ -43,7 +43,7 @@ class GameGeneratorService
                         ],
                         [
                             'role' => 'user',
-                            'content' => $this->createGameLoopPrompt($type, $theme, $complexity)
+                            'content' => $this->createGameLoopPrompt($type)
                         ]
                     ];
                 } else if ($feedback) {
@@ -94,7 +94,7 @@ class GameGeneratorService
         }
     }
 
-    private function createGameLoopPrompt($type, $theme, $complexity)
+    private function createGameLoopPrompt($type)
     {
         return <<<PROMPT
         Generate a simple HTML5 game with:
@@ -103,8 +103,6 @@ class GameGeneratorService
         3. Game over screen with restart option
         
         Game Type: {$type}
-        Theme: {$theme}
-        Complexity: {$complexity}
 
         Provide output as JSON with:
         {

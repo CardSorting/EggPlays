@@ -29,54 +29,44 @@ class GameGeneratorController extends Controller
     {
         $request->validate([
             'game_type' => 'required|string',
-            'theme' => 'required|string',
-            'complexity' => 'required|string|in:simple,medium,complex',
-            'phase' => 'sometimes|integer|min:1|max:5',
             'feedback' => 'sometimes|array'
         ]);
 
         try {
             $gameId = $request->game_id ?? Str::uuid();
-            $phase = $request->phase ?? 1;
             
-            Log::debug('Generating game phase', [
+            Log::debug('Generating game', [
                 'game_id' => $gameId,
-                'phase' => $phase,
-                'theme' => $request->theme
+                'type' => $request->game_type
             ]);
 
             // Format feedback for AI
             $formattedFeedback = $this->formatFeedback($request->feedback);
 
-            // Generate phase content
-            $phaseContent = $this->gameService->generateGamePhase(
+            // Generate game content
+            $gameContent = $this->gameService->generateGamePhase(
                 $request->game_type,
-                $request->theme,
-                $request->complexity,
                 $formattedFeedback
             );
 
-            // Store phase files and track changes
-            $changes = $this->storePhaseFiles($gameId, $phase, $phaseContent);
+            // Store game files
+            $this->storeGameFiles($gameId, $gameContent);
 
-            Log::debug('Game phase stored', [
-                'game_id' => $gameId,
-                'phase' => $phase
+            Log::debug('Game stored', [
+                'game_id' => $gameId
             ]);
 
             return redirect()->route('game.show', ['id' => $gameId])
-                ->with('success', 'Game phase generated successfully!')
-                ->with('phase', $phase)
-                ->with('next_prompt', $phaseContent['next_prompt'])
-                ->with('changes', $changes);
+                ->with('success', 'Game generated successfully!')
+                ->with('gameUrl', asset("storage/games/{$gameId}/index.html"));
 
         } catch (Exception $e) {
-            Log::error('Game phase generation failed', [
+            Log::error('Game generation failed', [
                 'error' => $e->getMessage(),
                 'stack' => $e->getTraceAsString()
             ]);
             return back()->withInput()
-                ->withErrors(['error' => 'Game phase generation failed: ' . $e->getMessage()]);
+                ->withErrors(['error' => 'Game generation failed: ' . $e->getMessage()]);
         }
     }
 
@@ -89,96 +79,43 @@ class GameGeneratorController extends Controller
             abort(404);
         }
 
-        $phase = session('phase', 1);
-        $nextPrompt = session('next_prompt');
-        $changes = session('changes', []);
-        
-        Log::debug('Showing game', [
-            'game_id' => $id,
-            'phase' => $phase
-        ]);
-
         return view('game-display', [
             'gameUrl' => asset("storage/{$gamePath}/index.html"),
-            'gameId' => $id,
-            'phase' => $phase,
-            'nextPrompt' => $nextPrompt,
-            'changes' => $changes
+            'gameId' => $id
         ]);
     }
 
-    // Handle game feedback and next phase
+    // Handle game feedback and regeneration
     public function updateGamePhase(Request $request, $id)
     {
         $request->validate([
-            'feedback' => 'required|array',
-            'phase' => 'required|integer|min:1|max:5'
+            'feedback' => 'required|array'
         ]);
 
-        Log::debug('Updating game phase', [
-            'game_id' => $id,
-            'phase' => $request->phase,
-            'new_phase' => $request->phase + 1
+        Log::debug('Updating game', [
+            'game_id' => $id
         ]);
 
         return $this->generateGamePhase($request->merge([
-            'game_id' => $id,
-            'theme' => $this->formatFeedback($request->feedback),
-            'phase' => $request->phase + 1
+            'game_id' => $id
         ]));
     }
 
-    // Store phase-specific files and track changes
-    private function storePhaseFiles($gameId, $phase, $phaseContent)
+    // Store game files
+    private function storeGameFiles($gameId, $gameContent)
     {
-        $basePath = "games/{$gameId}/phase-{$phase}";
-        $changes = [];
-        
-        // Store phase description
         Storage::disk('public')->put(
-            "{$basePath}/description.txt",
-            $phaseContent['content']['description'] ?? ''
+            "games/{$gameId}/index.html",
+            $gameContent['html'] ?? ''
         );
-        $changes[] = 'Updated game description';
-        
-        // Store phase assets
-        $assets = $phaseContent['content']['assets'] ?? [];
         Storage::disk('public')->put(
-            "{$basePath}/assets.json",
-            json_encode($assets)
+            "games/{$gameId}/style.css",
+            $gameContent['css'] ?? ''
         );
-        if (!empty($assets)) {
-            $changes[] = 'Added new assets: ' . implode(', ', $assets);
-        }
-        
-        // Store phase tasks
-        $tasks = $phaseContent['content']['tasks'] ?? [];
         Storage::disk('public')->put(
-            "{$basePath}/tasks.json",
-            json_encode($tasks)
+            "games/{$gameId}/script.js",
+            $gameContent['js'] ?? ''
         );
-        if (!empty($tasks)) {
-            $changes[] = 'Completed tasks: ' . implode(', ', $tasks);
-        }
-        
-        // If final phase, store game files
-        if ($phase === 5) {
-            Storage::disk('public')->put(
-                "games/{$gameId}/index.html",
-                $phaseContent['content']['html'] ?? ''
-            );
-            Storage::disk('public')->put(
-                "games/{$gameId}/style.css",
-                $phaseContent['content']['css'] ?? ''
-            );
-            Storage::disk('public')->put(
-                "games/{$gameId}/script.js",
-                $phaseContent['content']['js'] ?? ''
-            );
-            $changes[] = 'Finalized game files';
-        }
-
-        return $changes;
     }
 
     // Format feedback into a structured prompt
