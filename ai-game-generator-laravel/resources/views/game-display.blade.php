@@ -28,6 +28,23 @@
         .phase-progress {
             margin-bottom: 2rem;
         }
+        .feedback-categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .feedback-category {
+            background: #2d3748;
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+        .change-log {
+            background: #2d3748;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 2rem;
+        }
     </style>
 </head>
 <body class="bg-gray-900">
@@ -55,19 +72,51 @@
                 </div>
             </div>
 
-            <h2 class="text-xl font-bold mb-4">Provide Feedback for Phase {{ $phase + 1 }}</h2>
+            <h2 class="text-xl font-bold mb-4">Provide Detailed Feedback</h2>
             <form action="{{ route('game.update', ['id' => $gameId]) }}" method="POST" class="space-y-4">
                 @csrf
                 @method('PUT')
-                <div>
-                    <label for="feedback" class="block text-sm font-medium text-gray-300">
-                        Your Feedback
-                    </label>
-                    <textarea id="feedback" name="feedback" required
-                        class="mt-1 w-full p-2 bg-gray-700 text-white rounded"
-                        rows="4"
-                        placeholder="Enter your feedback for the next phase..."></textarea>
+                
+                <div class="feedback-categories">
+                    <div class="feedback-category">
+                        <h4 class="font-semibold mb-2">Gameplay</h4>
+                        <textarea name="feedback[gameplay]" 
+                            class="w-full p-2 bg-gray-700 text-white rounded"
+                            rows="3"
+                            placeholder="Controls, mechanics, difficulty..."></textarea>
+                    </div>
+                    <div class="feedback-category">
+                        <h4 class="font-semibold mb-2">Visuals</h4>
+                        <textarea name="feedback[visuals]"
+                            class="w-full p-2 bg-gray-700 text-white rounded"
+                            rows="3"
+                            placeholder="Graphics, animations, UI..."></textarea>
+                    </div>
+                    <div class="feedback-category">
+                        <h4 class="font-semibold mb-2">Audio</h4>
+                        <textarea name="feedback[audio]"
+                            class="w-full p-2 bg-gray-700 text-white rounded"
+                            rows="3"
+                            placeholder="Music, sound effects..."></textarea>
+                    </div>
+                    <div class="feedback-category">
+                        <h4 class="font-semibold mb-2">Story</h4>
+                        <textarea name="feedback[story]"
+                            class="w-full p-2 bg-gray-700 text-white rounded"
+                            rows="3"
+                            placeholder="Narrative, characters..."></textarea>
+                    </div>
                 </div>
+
+                <div class="change-log">
+                    <h4 class="font-semibold mb-2">Changes Since Last Version</h4>
+                    <ul class="list-disc list-inside text-gray-300">
+                        @foreach ($changes as $change)
+                            <li>{{ $change }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+
                 <input type="hidden" name="phase" value="{{ $phase }}">
                 <div>
                     <button type="submit"

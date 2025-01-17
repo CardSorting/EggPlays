@@ -32,7 +32,7 @@ class GameGeneratorController extends Controller
             'theme' => 'required|string',
             'complexity' => 'required|string|in:simple,medium,complex',
             'phase' => 'sometimes|integer|min:1|max:5',
-            'feedback' => 'sometimes|string'
+            'feedback' => 'sometimes|array'
         ]);
 
         try {
@@ -45,16 +45,19 @@ class GameGeneratorController extends Controller
                 'theme' => $request->theme
             ]);
 
+            // Format feedback for AI
+            $formattedFeedback = $this->formatFeedback($request->feedback);
+
             // Generate phase content
             $phaseContent = $this->gameService->generateGamePhase(
                 $request->game_type,
                 $request->theme,
                 $request->complexity,
-                $request->feedback
+                $formattedFeedback
             );
 
-            // Store phase files
-            $this->storePhaseFiles($gameId, $phase, $phaseContent);
+            // Store phase files and track changes
+            $changes = $this->storePhaseFiles($gameId, $phase, $phaseContent);
 
             Log::debug('Game phase stored', [
                 'game_id' => $gameId,
@@ -64,7 +67,8 @@ class GameGeneratorController extends Controller
             return redirect()->route('game.show', ['id' => $gameId])
                 ->with('success', 'Game phase generated successfully!')
                 ->with('phase', $phase)
-                ->with('next_prompt', $phaseContent['next_prompt']);
+                ->with('next_prompt', $phaseContent['next_prompt'])
+                ->with('changes', $changes);
 
         } catch (Exception $e) {
             Log::error('Game phase generation failed', [
@@ -87,6 +91,7 @@ class GameGeneratorController extends Controller
 
         $phase = session('phase', 1);
         $nextPrompt = session('next_prompt');
+        $changes = session('changes', []);
         
         Log::debug('Showing game', [
             'game_id' => $id,
@@ -97,7 +102,8 @@ class GameGeneratorController extends Controller
             'gameUrl' => asset("storage/{$gamePath}/index.html"),
             'gameId' => $id,
             'phase' => $phase,
-            'nextPrompt' => $nextPrompt
+            'nextPrompt' => $nextPrompt,
+            'changes' => $changes
         ]);
     }
 
@@ -105,7 +111,7 @@ class GameGeneratorController extends Controller
     public function updateGamePhase(Request $request, $id)
     {
         $request->validate([
-            'feedback' => 'required|string',
+            'feedback' => 'required|array',
             'phase' => 'required|integer|min:1|max:5'
         ]);
 
@@ -117,33 +123,43 @@ class GameGeneratorController extends Controller
 
         return $this->generateGamePhase($request->merge([
             'game_id' => $id,
-            'theme' => $request->feedback,
+            'theme' => $this->formatFeedback($request->feedback),
             'phase' => $request->phase + 1
         ]));
     }
 
-    // Store phase-specific files
+    // Store phase-specific files and track changes
     private function storePhaseFiles($gameId, $phase, $phaseContent)
     {
         $basePath = "games/{$gameId}/phase-{$phase}";
+        $changes = [];
         
         // Store phase description
         Storage::disk('public')->put(
             "{$basePath}/description.txt",
             $phaseContent['content']['description'] ?? ''
         );
+        $changes[] = 'Updated game description';
         
         // Store phase assets
+        $assets = $phaseContent['content']['assets'] ?? [];
         Storage::disk('public')->put(
             "{$basePath}/assets.json",
-            json_encode($phaseContent['content']['assets'] ?? [])
+            json_encode($assets)
         );
+        if (!empty($assets)) {
+            $changes[] = 'Added new assets: ' . implode(', ', $assets);
+        }
         
         // Store phase tasks
+        $tasks = $phaseContent['content']['tasks'] ?? [];
         Storage::disk('public')->put(
             "{$basePath}/tasks.json",
-            json_encode($phaseContent['content']['tasks'] ?? [])
+            json_encode($tasks)
         );
+        if (!empty($tasks)) {
+            $changes[] = 'Completed tasks: ' . implode(', ', $tasks);
+        }
         
         // If final phase, store game files
         if ($phase === 5) {
@@ -159,6 +175,26 @@ class GameGeneratorController extends Controller
                 "games/{$gameId}/script.js",
                 $phaseContent['content']['js'] ?? ''
             );
+            $changes[] = 'Finalized game files';
         }
+
+        return $changes;
+    }
+
+    // Format feedback into a structured prompt
+    private function formatFeedback($feedback)
+    {
+        if (empty($feedback)) {
+            return null;
+        }
+
+        $formatted = [];
+        foreach ($feedback as $category => $content) {
+            if (!empty($content)) {
+                $formatted[] = ucfirst($category) . " feedback: " . $content;
+            }
+        }
+
+        return implode("\n", $formatted);
     }
 }
